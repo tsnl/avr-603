@@ -13,6 +13,7 @@ public class PlayerManager : MonoBehaviour
     public GameObject playerProjectilePrefab;
     public float projectileForce = 10f;
     public float projectileCooldownSec = 0.5f;
+    public float playerMaxHealth = 100f;
 
     private GameObject playerAvatar;
     private GameObject playerCamera;
@@ -21,9 +22,10 @@ public class PlayerManager : MonoBehaviour
     private InputAction lookAction;
     private InputAction fireAction;
     private float accumulatedProjectileCooldownTime = 0f;
+    private float playerHealth;
 
     private Vector2 inputLookAngleOffset = new Vector2(0, 0);
-    private Vector2 lookAngleOffset = new Vector2(0, 0);
+    private Vector2 lookAngleOffset = new Vector2(Mathf.PI, 0);
 
     void Start()
     {
@@ -89,7 +91,7 @@ public class PlayerManager : MonoBehaviour
         accumulatedProjectileCooldownTime += Time.fixedDeltaTime;
 
         if (fireAction.ReadValue<float>() > 0.5f && accumulatedProjectileCooldownTime >= projectileCooldownSec)
-        {            
+        {
             var spawner = playerProjectileSpawnPoint[numProjectilesFiredByPlayer % playerProjectileSpawnPoint.Length];
             var projectile = Instantiate(playerProjectilePrefab, spawner.transform);
             Destroy(projectile, 10f);

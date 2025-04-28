@@ -1,4 +1,5 @@
 using System;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -6,9 +7,10 @@ public class EnemyController : MonoBehaviour
 {
     public GameObject projectileSpawnPoint;
     public GameObject projectilePrefab;
+    public GameObject internalStateDisplay;
     public float attackCooldownSec = 1f;
     public float roarProbability = 0.8f;
-    public float health = 100f;
+    public float maxHealth = 100f;
     public float awareDistance = 15f;
     public int debugForcePhase = -1;
     public float phase1TurnSpeedFactor = 0.90f;
@@ -21,22 +23,27 @@ public class EnemyController : MonoBehaviour
     private BehaviorTree bt;
     private float remainingHealth;
     private GameObject player;
+    private float timeAccumulator = 0f;
+
+    internal TMP_Text textDisplay;
 
     void Start()
     {
         player = GameObject.FindGameObjectWithTag("PlayerAvatar");
-        remainingHealth = health;
+        remainingHealth = maxHealth;
+
+        textDisplay = internalStateDisplay.GetComponent<TMP_Text>();
 
         bt = new Select
         {
             Children = new Select.Choice[]
             {
                 new Select.Choice(
-                    () => debugForcePhase == 1 || IsAwareOf(player) && remainingHealth >= health * 0.5f,
+                    () => debugForcePhase == 1 || IsAwareOf(player) && remainingHealth >= maxHealth * 0.5f,
                     Phase1()
                 ),
                 new Select.Choice(
-                    () => debugForcePhase == 2 || IsAwareOf(player) && remainingHealth < health * 0.5f,
+                    () => debugForcePhase == 2 || IsAwareOf(player) && remainingHealth < maxHealth * 0.5f,
                     Phase2()
                 ),
             }
@@ -55,8 +62,9 @@ public class EnemyController : MonoBehaviour
                             new Idle(this, 0.15f),
                             new Random() {
                                 Children = new Random.Choice[] {
-                                    new(0.5f, NewAttackBT()),
-                                    new(0.5f, new Roar(this, () => roarJumpForce))
+                                    new(0.50f, NewAttackBT()),
+                                    new(0.35f, new Idle(this, 1.25f)),
+                                    new(1.00f, new Roar(this, () => roarJumpForce))
                                 },
                             }
                         }
@@ -84,11 +92,11 @@ public class EnemyController : MonoBehaviour
                     new Sequence(
                         new BehaviorTree[] {
                             // Briefly wait before trying to attack once facing the player.
-                            new Idle(this, 0.3f),
+                            new Idle(this, 0.1f),
                             new Random() {
                                 Children = new Random.Choice[] {
-                                    new(0.5f, NewAttackBT()),
-                                    new(0.5f, new Roar(this, () => roarJumpForce))
+                                    new(1.0f, NewAttackBT()),
+                                    new(0.0f, new Roar(this, () => roarJumpForce))
                                 },
                             }
                         }
@@ -106,11 +114,11 @@ public class EnemyController : MonoBehaviour
     BehaviorTree NewAttackBT() =>
         new Sequence(
             new[] {
-                new Attack(this, player, projectileSpawnPoint, projectilePrefab, 0.05f),
-                new Attack(this, player, projectileSpawnPoint, projectilePrefab, 0.05f),
-                new Attack(this, player, projectileSpawnPoint, projectilePrefab, 0.05f),
-                new Attack(this, player, projectileSpawnPoint, projectilePrefab, 0.05f),
-                new Attack(this, player, projectileSpawnPoint, projectilePrefab, attackCooldownSec),
+                new Attack(this, player, projectileSpawnPoint, projectilePrefab),
+                new Attack(this, player, projectileSpawnPoint, projectilePrefab),
+                new Attack(this, player, projectileSpawnPoint, projectilePrefab),
+                new Attack(this, player, projectileSpawnPoint, projectilePrefab),
+                new Attack(this, player, projectileSpawnPoint, projectilePrefab),
             }
         );
 
@@ -152,74 +160,74 @@ class FacePlayer : BehaviorTree
 
     public BehaviorStatus Tick(float dt)
     {
+        self.textDisplay.text = "FacePlayer";
+
         if (self.IsFacing(player, toleranceDeg()))
         {
-            Debug.Log("Facing player.");
             return BehaviorStatus.Success;
         }
         else
         {
             Vector3 direction = (player.transform.position - self.transform.position).normalized;
             Quaternion lookRotation = Quaternion.LookRotation(direction);
-            self.transform.rotation = Quaternion.Slerp(self.transform.rotation, lookRotation, turnSpeedFactor());
-            return BehaviorStatus.Running;
+            var angle = Quaternion.Angle(self.transform.rotation, lookRotation);
+            if (angle < toleranceDeg())
+            {
+                self.transform.rotation = Quaternion.Slerp(self.transform.rotation, lookRotation, 0.5f);
+                return BehaviorStatus.Success;
+            }
+            else
+            {
+                self.transform.rotation = Quaternion.Slerp(self.transform.rotation, lookRotation, Mathf.Max(0.25f, turnSpeedFactor() * dt));
+                return BehaviorStatus.Running;
+            }
         }
     }
 }
 
 class Attack : BehaviorTree
 {
-    private EnemyController enemyController;
+    private EnemyController self;
     private GameObject player;
     private GameObject projectileSpawnPoint;
     private GameObject projectilePrefab;
-    private float attackCooldown;
-    private float attackCooldownAccumulator = 0f;
 
-    public Attack(EnemyController enemyController, GameObject player, GameObject projectileSpawnPoint, GameObject projectilePrefab, float attackCooldown)
+    public Attack(EnemyController enemyController, GameObject player, GameObject projectileSpawnPoint, GameObject projectilePrefab)
     {
-        this.enemyController = enemyController;
+        this.self = enemyController;
         this.player = player;
         this.projectileSpawnPoint = projectileSpawnPoint;
         this.projectilePrefab = projectilePrefab;
-        this.attackCooldown = attackCooldown;
     }
 
     public BehaviorStatus Tick(float dt)
     {
-        Debug.Log("Attacking player.");
-
-        if (attackCooldownAccumulator < attackCooldown)
-        {
-            attackCooldownAccumulator += dt;
-            return BehaviorStatus.Running;
-        }
+        self.textDisplay.text = "Attack";
 
         var projectile = GameObject.Instantiate(projectilePrefab, projectileSpawnPoint.transform);
         projectile.GetComponent<Rigidbody>().AddForce(projectileSpawnPoint.transform.forward * 15f, ForceMode.Impulse);
         GameObject.Destroy(projectile, 10f);
-        attackCooldownAccumulator = 0f;
         return BehaviorStatus.Success;
     }
 }
 
 class Roar : BehaviorTree
 {
-    private EnemyController enemyController;
+    private EnemyController self;
     private bool jumpIssued = false;
     private Func<float> jumpForce;
 
     public Roar(EnemyController enemyController, Func<float> jumpForce)
     {
-        this.enemyController = enemyController;
+        this.self = enemyController;
         this.jumpForce = jumpForce;
     }
 
     public BehaviorStatus Tick(float dt)
     {
-        Debug.Log("Roaring.");
+        self.textDisplay.text = "Roar";
 
-        var grounded = Physics.CheckSphere(enemyController.transform.position, 5.01f, LayerMask.GetMask("Ground"));
+        var grounded = Physics.CheckSphere(self.transform.position, 5.1f, LayerMask.GetMask("Ground"));
 
         if (grounded)
         {
@@ -231,7 +239,7 @@ class Roar : BehaviorTree
             }
             else
             {
-                enemyController.GetComponent<Rigidbody>().AddForce(Vector3.up * 2.0f, ForceMode.Impulse);
+                self.GetComponent<Rigidbody>().AddForce(Vector3.up * jumpForce(), ForceMode.Impulse);
                 jumpIssued = true;
             }
         }
@@ -243,24 +251,26 @@ class Roar : BehaviorTree
 
 class Idle : BehaviorTree
 {
-    private EnemyController enemyController;
+    private EnemyController self;
     private float idleTime = 0.0f;
     private float idleAccumulator = 0.0f;
 
     public Idle(EnemyController enemyController, float idleTime)
     {
-        this.enemyController = enemyController;
+        this.self = enemyController;
         this.idleTime = idleTime;
     }
 
     public BehaviorStatus Tick(float dt)
     {
-        Debug.Log("Idling.");
+        self.textDisplay.text = "Idle";
+
         idleAccumulator += dt;
         if (idleAccumulator < idleTime)
         {
             return BehaviorStatus.Running;
         }
+
         idleAccumulator = 0.0f;
         return BehaviorStatus.Success;
     }

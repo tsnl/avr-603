@@ -169,7 +169,7 @@ public class Random : BehaviorTree
       isInit = true;
     }
 
-    var select = this.random.NextDouble() * totalWeight;
+    var select = random.NextDouble() * totalWeight;
     float cumulativeWeight = 0f;
     for (int i = 0; i < Children.Length; i++)
     {
